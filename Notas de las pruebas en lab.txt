@@ -1,0 +1,95 @@
+Post con el paso a paso de las pruebas + video demo
+
+https://developers.redhat.com/articles/2022/05/04/use-red-hats-sso-manage-kafka-broker-authorization
+
+Repositorio original
+
+https://github.com/keunlee/amq-streams-broker-authorization-sample/
+
+Laboratorio:
+    OpenShift GitOps Workshop
+    OpenShift version 4.14.6
+    Operadores:
+        Red Hat OpenShift GitOps 1.11.3 provided by Red Hat
+        AMQ Streams 2.6.0-2 provided by Red Hat
+        Red Hat Single Sign On Operator 7.6.8-opr-001 provided by Red Hat
+Entorno:
+    Mac OS Sonoma Versión 14.4.1 (23E224)
+Ansible:
+    ansible --version
+    ansible [core 2.16.5]
+    config file = /Users/barmolla/.ansible.cfg
+    configured module search path = ['/Users/barmolla/.ansible/plugins/modules', '/usr/share/ansible/plugins/modules']
+    ansible python module location = /usr/local/Cellar/ansible/9.4.0/libexec/lib/python3.12/site-packages/ansible
+    ansible collection location = /Users/barmolla/.ansible/collections:/usr/share/ansible/collections
+    executable location = /usr/local/bin/ansible
+    python version = 3.12.2 (main, Feb  6 2024, 20:19:44) [Clang 15.0.0 (clang-1500.3.9.4)] (/usr/local/Cellar/ansible/9.4.0/libexec/bin/python)
+    jinja version = 3.1.3
+    libyaml = True
+
+---
+
+Modificaciones realizadas al proyecto ansible original
+
+- 1 - Instalación de servidor LDAP
+
+1a - Se agrega policy necesaria para la creación de la aplicación en el namespace openldap. 
+     Este cambio fue agregado al yaml ocp/bootstrap/roles/ocp4-install-openldap/openldap.yaml.
+
+     oc adm policy add-scc-to-user anyuid -n openldap -z default
+
+1b - Se modificó fuente de la imagen base de ldap por xhuaustc/openldap-2441-centos7
+     Este cambio fue agregado al yaml ocp/bootstrap/roles/ocp4-install-openldap/openldap.yaml.
+    
+     oc -n openldap new-app --as-deployment-config=true --image=xhuaustc/openldap-2441-centos7 --name=openldap-server
+
+- 2 - Instalación de Red Hat Single Sign On
+
+2a - Se elimina policy de todos los json a importar en el RHSSO de los archivos:
+     - 11-kafka-authz-realm.json
+     - 20-kafka-authz-realm-kafka-client.json
+     Se conserva el archivo original y se crea otros con sufijo fix.
+     - 11-kafka-authz-realm-fix.json
+     - 20-kafka-authz-realm-kafka-client-fix.json
+...
+{
+    "name": "Default Policy",
+    "description": "A policy that grants access only for users within this realm",
+    "type": "js",
+    "logic": "POSITIVE",
+    "decisionStrategy": "AFFIRMATIVE",
+    "config": {
+        "code": "// by default, grants any permission associated with this policy\n$evaluation.grant();\n"
+    }
+},
+...
+
+2b - Se cambió el comando new-app de ocp/bootstrap/roles/ocp4-install-rh-sso/keycloak.yaml que genera una base postgres necesaria para la instalación de RHSSO.
+
+Antes: 
+     oc -n keycloak new-app postgresql-persistent -p=NAMESPACE=openshift -p=DATABASE_SERVICE_NAME=postgres -p=POSTGRESQL_USER=postgres -p=POSTGRESQL_PASSWORD=postgres -p=POSTGRESQL_DATABASE=keycloakdb -p=POSTGRESQL_VERSION=13-el8 --as-deployment-config=false
+
+Ahora:
+     oc process postgresql-persistent -p=NAMESPACE=openshift -p=DATABASE_SERVICE_NAME=postgres -p=POSTGRESQL_USER=postgres -p=POSTGRESQL_PASSWORD=postgres -p=POSTGRESQL_DATABASE=keycloakdb -p=POSTGRESQL_VERSION=13-el8 -n openshift | oc create -f - -n keycloak
+
+2c - Se importaron al realm kafka-authz los archivos
+
+     - 10-kafka-authz-realm.json
+     - 11-kafka-authz-realm-fix.json
+     - 12-kafka-authz-realm.json
+
+2d - Se generó de manera manual la federación de usuarios con LDAP.
+2e - Se ejecutó proceso de sincronización de todos los usuarios (full sync).
+2f - Se generó de manera manual la federación de usuarios con LDAP.
+2g - Se ejecutó el proceso Sync LDAP Groups to Keycloak.
+2h - Se importó al realm kafka-authz el archivo 20-kafka-authz-realm-kafka-client.json
+
+- 3 - Instalación de Red Hat AMQ Streams
+
+3a - Se actualizó template Jinja para la generación del CRD que genera el cluster de Kafka (ocp/bootstrap/roles/ocp4-install-amqstreams/templates/kafka.yaml.j2).
+
+Antes:
+     version: 3.1.0
+
+Ahora:
+     version: 3.6.0

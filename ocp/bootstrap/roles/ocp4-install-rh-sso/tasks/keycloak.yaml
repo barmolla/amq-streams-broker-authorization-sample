@@ -25,7 +25,8 @@
     if [ -z "$POSTGRES_APP_CREATED" ];
     then
       echo "Creating Postgresql Application Instance"
-      oc -n keycloak new-app postgresql-persistent -p=NAMESPACE=openshift -p=DATABASE_SERVICE_NAME=postgres -p=POSTGRESQL_USER=postgres -p=POSTGRESQL_PASSWORD=postgres -p=POSTGRESQL_DATABASE=keycloakdb -p=POSTGRESQL_VERSION=13-el8 --as-deployment-config=false
+      #oc -n keycloak new-app postgresql-persistent -p=NAMESPACE=openshift -p=DATABASE_SERVICE_NAME=postgres -p=POSTGRESQL_USER=postgres -p=POSTGRESQL_PASSWORD=postgres -p=POSTGRESQL_DATABASE=keycloakdb -p=POSTGRESQL_VERSION=13-el8 --as-deployment-config=false
+      oc process postgresql-persistent -p=NAMESPACE=openshift -p=DATABASE_SERVICE_NAME=postgres -p=POSTGRESQL_USER=postgres -p=POSTGRESQL_PASSWORD=postgres -p=POSTGRESQL_DATABASE=keycloakdb -p=POSTGRESQL_VERSION=13-el8 -n openshift | oc create -f - -n keycloak
 
       echo "Patch configuration map"
       oc -n keycloak patch cm cm-installation-state --type='json' -p='[{"op" : "replace" ,"path" : "/data/postgres_app_created" ,"value" : "true"}]' 
